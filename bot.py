@@ -45,6 +45,11 @@ MAIN_MENU = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+# Filter that matches any menu button — used to guard WAITING_AMOUNT state
+MENU_FILTER = filters.Regex(
+    f"^({BTN_CONTRIBUTE}|{BTN_HISTORY}|{BTN_SHEET}|{BTN_CLEAR})$"
+)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -65,14 +70,22 @@ def user_fullname(user) -> str:
     return f"{user.first_name} {user.last_name or ''}".strip()
 
 
+async def send(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
+    """Send a plain (non-reply) message to keep chat clean."""
+    return await context.bot.send_message(
+        chat_id=update.effective_chat.id, text=text, **kwargs
+    )
+
+
 # ── Handlers ─────────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text(
-        "☕ Chào mừng bạn đến với quỹ *Đá và Cà Phê*!\n\n"
+    await send(
+        update, context,
+        "☕ Chào mừng bạn đến với quỹ <b>Đá và Cà Phê</b>!\n\n"
         "Vui lòng chọn chức năng từ menu bên dưới.",
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=MAIN_MENU,
     )
     return ConversationHandler.END
@@ -80,33 +93,35 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_contribute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text(
-        "☕ *Quỹ Đá và Cà Phê*\n\n"
+    await send(
+        update, context,
+        "☕ <b>Quỹ Đá và Cà Phê</b>\n\n"
         "Nhập số tiền bạn muốn đóng góp cho quỹ:\n"
-        f"_(Tối thiểu {fmt(config.MIN_AMOUNT)})_",
-        parse_mode="Markdown",
+        f"<i>(Tối thiểu {fmt(config.MIN_AMOUNT)})</i>",
+        parse_mode="HTML",
     )
     return WAITING_AMOUNT
 
 
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw = update.message.text.strip()
-    # Strip formatting characters
     clean = raw.replace(".", "").replace(",", "").replace(" ", "").rstrip("đdĐD")
 
     if not clean.lstrip("-").isdigit():
-        await update.message.reply_text(
+        await send(
+            update, context,
             "❌ Số tiền không hợp lệ. Vui lòng nhập một số nguyên.\n"
-            "Ví dụ: *50000*",
-            parse_mode="Markdown",
+            "Ví dụ: <b>50000</b>",
+            parse_mode="HTML",
         )
         return WAITING_AMOUNT
 
     amount = int(clean)
     if amount < config.MIN_AMOUNT:
-        await update.message.reply_text(
-            f"❌ Số tiền tối thiểu là *{fmt(config.MIN_AMOUNT)}*. Vui lòng nhập lại.",
-            parse_mode="Markdown",
+        await send(
+            update, context,
+            f"❌ Số tiền tối thiểu là <b>{fmt(config.MIN_AMOUNT)}</b>. Vui lòng nhập lại.",
+            parse_mode="HTML",
         )
         return WAITING_AMOUNT
 
@@ -116,21 +131,21 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✅ Tôi đã chuyển khoản thành công", callback_data=f"confirm:{amount}")]
     ])
 
-    msg = await update.message.reply_photo(
+    msg = await context.bot.send_photo(
+        chat_id=update.effective_chat.id,
         photo=vietqr_url(amount),
         caption=(
-            "💳 *Thông tin chuyển khoản*\n\n"
+            "💳 <b>Thông tin chuyển khoản</b>\n\n"
             f"🏦 Ngân hàng: MB Bank\n"
             f"👤 Tên TK: Quỹ Đá và Cà Phê\n"
-            f"📱 Số TK: `{config.ACCOUNT_NUMBER}`\n"
-            f"💰 Số tiền: *{fmt(amount)}*\n"
-            f"📝 Nội dung: `Dong gop quy Da va Ca Phe`\n\n"
-            "_Quét mã QR để chuyển khoản, sau đó nhấn xác nhận bên dưới._"
+            f"📱 Số TK: <code>{config.ACCOUNT_NUMBER}</code>\n"
+            f"💰 Số tiền: <b>{fmt(amount)}</b>\n"
+            f"📝 Nội dung: <code>Dong gop quy Da va Ca Phe</code>\n\n"
+            "<i>Quét mã QR để chuyển khoản, sau đó nhấn xác nhận bên dưới.</i>"
         ),
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=keyboard,
     )
-    # track message id so Clear can remove it
     context.user_data.setdefault("bot_messages", []).append(msg.message_id)
     return ConversationHandler.END
 
@@ -151,13 +166,13 @@ async def handle_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_caption(
         caption=(
-            "🎉 *Chúc mừng bạn đóng góp quỹ thành công!*\n\n"
-            f"👤 Người đóng góp: *{full_name}*\n"
-            f"💰 Số tiền: *{fmt(amount)}*\n"
+            "🎉 <b>Chúc mừng bạn đóng góp quỹ thành công!</b>\n\n"
+            f"👤 Người đóng góp: <b>{full_name}</b>\n"
+            f"💰 Số tiền: <b>{fmt(amount)}</b>\n"
             f"📅 Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
             "Cảm ơn bạn đã ủng hộ quỹ Đá và Cà Phê ☕🧊"
         ),
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
     context.user_data.pop("pending_amount", None)
 
@@ -180,25 +195,19 @@ async def handle_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"{i}. 💰 {fmt(amount)} — {date}")
         lines.append(f"\n💎 <b>Tổng tháng {month}: {fmt(total)}</b>")
 
-    msg = await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode="HTML",
-    )
-    context.user_data.setdefault("bot_messages", []).append(msg.message_id)
+    await send(update, context, "\n".join(lines), parse_mode="HTML")
 
 
 async def handle_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     link = config.GOOGLE_SHEET_LINK
     if not link:
-        await update.message.reply_text(
-            "📊 Link Google Sheet chưa được cập nhật. Vui lòng liên hệ quản trị viên."
-        )
+        await send(update, context, "📊 Link Google Sheet chưa được cập nhật.")
         return
 
-    await update.message.reply_text(
-        f"📊 *Bảng theo dõi quỹ Đá và Cà Phê:*\n\n{link}",
-        parse_mode="Markdown",
-        disable_web_page_preview=False,
+    await send(
+        update, context,
+        f"📊 <b>Bảng theo dõi quỹ Đá và Cà Phê:</b>\n\n{link}",
+        parse_mode="HTML",
     )
 
 
@@ -210,9 +219,8 @@ async def handle_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=mid)
         except Exception:
-            pass  # already deleted or not accessible
+            pass
 
-    # Also delete the Clear button message itself
     try:
         await update.message.delete()
     except Exception:
@@ -220,8 +228,8 @@ async def handle_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = await context.bot.send_message(
         chat_id=chat_id,
-        text="✅ Đã xóa nội dung chat!\n_(Lịch sử chuyển khoản vẫn được lưu)_",
-        parse_mode="Markdown",
+        text="✅ Đã xóa nội dung chat!\n<i>(Lịch sử chuyển khoản vẫn được lưu)</i>",
+        parse_mode="HTML",
         reply_markup=MAIN_MENU,
     )
     context.user_data["bot_messages"] = [msg.message_id]
@@ -229,9 +237,7 @@ async def handle_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text(
-        "Đã hủy. Chọn chức năng từ menu.", reply_markup=MAIN_MENU
-    )
+    await send(update, context, "Đã hủy. Chọn chức năng từ menu.", reply_markup=MAIN_MENU)
     return ConversationHandler.END
 
 
@@ -243,12 +249,22 @@ def main():
     app = Application.builder().token(config.BOT_TOKEN).build()
 
     conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(f"^{BTN_CONTRIBUTE}$"), handle_contribute)],
+        entry_points=[
+            CommandHandler("start", cmd_start),
+            MessageHandler(filters.Regex(f"^{BTN_CONTRIBUTE}$"), handle_contribute),
+        ],
         states={
-            WAITING_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_amount)],
+            # Exclude menu buttons so they fall through to fallbacks
+            WAITING_AMOUNT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND & ~MENU_FILTER,
+                    handle_amount,
+                )
+            ],
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
+            MessageHandler(filters.Regex(f"^{BTN_CONTRIBUTE}$"), handle_contribute),
             MessageHandler(filters.Regex(f"^{BTN_HISTORY}$"), handle_history),
             MessageHandler(filters.Regex(f"^{BTN_SHEET}$"), handle_sheet),
             MessageHandler(filters.Regex(f"^{BTN_CLEAR}$"), handle_clear),
@@ -256,12 +272,8 @@ def main():
         allow_reentry=True,
     )
 
-    app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(conv)
     app.add_handler(CallbackQueryHandler(handle_confirm, pattern=r"^confirm:"))
-    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_HISTORY}$"), handle_history))
-    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_SHEET}$"), handle_sheet))
-    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_CLEAR}$"), handle_clear))
 
     logger.info("Bot đang chạy...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
