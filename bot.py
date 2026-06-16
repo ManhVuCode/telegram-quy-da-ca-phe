@@ -315,6 +315,14 @@ def main():
     )
 
     app.add_handler(conv)
+
+    # Standalone handlers — active at ALL times (even when not in a conversation)
+    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_START}$"), cmd_start))
+    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_HISTORY}$"), handle_history))
+    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_SHEET}$"), handle_sheet))
+    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_CLEAR}$"), handle_clear))
+    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_CLEAR_HISTORY}$"), handle_clear_history))
+
     app.add_handler(CallbackQueryHandler(handle_confirm, pattern=r"^confirm:"))
     app.add_handler(CallbackQueryHandler(handle_confirm_clear_history, pattern=r"^clrhist:"))
 
