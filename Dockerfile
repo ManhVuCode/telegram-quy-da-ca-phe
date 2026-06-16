@@ -10,6 +10,5 @@ RUN uv sync --frozen --no-dev
 COPY *.py ./
 
 ENV DATA_DIR=/data
-VOLUME ["/data"]
 
 CMD ["uv", "run", "python", "bot.py"]
