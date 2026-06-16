@@ -1,0 +1,7 @@
+.git
+.venv
+__pycache__
+*.pyc
+fund.db
+credentials.json
+.claude
