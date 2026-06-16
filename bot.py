@@ -22,7 +22,7 @@ from telegram.ext import (
 )
 
 import config
-from database import init_db, save_transaction, get_user_history
+from database import init_db, save_transaction, get_user_history, clear_user_history
 from sheets import save_to_sheet
 
 logging.basicConfig(
@@ -35,19 +35,25 @@ logger = logging.getLogger(__name__)
 WAITING_AMOUNT = 1
 
 # ── Menu labels ───────────────────────────────────────────────────────────────
-BTN_CONTRIBUTE = "💰 Đóng góp"
-BTN_HISTORY    = "📋 Lịch sử"
-BTN_SHEET      = "📊 Link Sheet"
-BTN_CLEAR      = "🗑️ Xóa chat"
+BTN_START         = "🏠 Start"
+BTN_CONTRIBUTE    = "💰 Đóng góp"
+BTN_HISTORY       = "📋 Lịch sử"
+BTN_SHEET         = "📊 Link Sheet"
+BTN_CLEAR         = "🗑️ Xóa chat"
+BTN_CLEAR_HISTORY = "❌ Xóa lịch sử"
 
 MAIN_MENU = ReplyKeyboardMarkup(
-    [[BTN_CONTRIBUTE, BTN_HISTORY], [BTN_SHEET, BTN_CLEAR]],
+    [
+        [BTN_START,      BTN_CONTRIBUTE],
+        [BTN_HISTORY,    BTN_SHEET],
+        [BTN_CLEAR,      BTN_CLEAR_HISTORY],
+    ],
     resize_keyboard=True,
 )
 
 # Filter that matches any menu button — used to guard WAITING_AMOUNT state
 MENU_FILTER = filters.Regex(
-    f"^({BTN_CONTRIBUTE}|{BTN_HISTORY}|{BTN_SHEET}|{BTN_CLEAR})$"
+    f"^({BTN_START}|{BTN_CONTRIBUTE}|{BTN_HISTORY}|{BTN_SHEET}|{BTN_CLEAR}|{BTN_CLEAR_HISTORY})$"
 )
 
 
@@ -235,6 +241,39 @@ async def handle_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["bot_messages"] = [msg.message_id]
 
 
+async def handle_clear_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    month = datetime.now().strftime("%m/%Y")
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Xác nhận xóa", callback_data="clrhist:yes"),
+            InlineKeyboardButton("❌ Hủy", callback_data="clrhist:no"),
+        ]
+    ])
+    await send(
+        update, context,
+        f"⚠️ Bạn có chắc muốn xóa toàn bộ lịch sử đóng góp tháng <b>{month}</b> không?\n"
+        "<i>(Dữ liệu trên Google Sheet sẽ không bị ảnh hưởng)</i>",
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+
+
+async def handle_confirm_clear_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "clrhist:no":
+        await query.edit_message_text("↩️ Đã hủy. Lịch sử của bạn vẫn được giữ nguyên.")
+        return
+
+    deleted = clear_user_history(update.effective_user.id)
+    month = datetime.now().strftime("%m/%Y")
+    await query.edit_message_text(
+        f"✅ Đã xóa <b>{deleted}</b> giao dịch tháng <b>{month}</b> khỏi lịch sử.",
+        parse_mode="HTML",
+    )
+
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await send(update, context, "Đã hủy. Chọn chức năng từ menu.", reply_markup=MAIN_MENU)
@@ -251,6 +290,7 @@ def main():
     conv = ConversationHandler(
         entry_points=[
             CommandHandler("start", cmd_start),
+            MessageHandler(filters.Regex(f"^{BTN_START}$"), cmd_start),
             MessageHandler(filters.Regex(f"^{BTN_CONTRIBUTE}$"), handle_contribute),
         ],
         states={
@@ -264,16 +304,19 @@ def main():
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
+            MessageHandler(filters.Regex(f"^{BTN_START}$"), cmd_start),
             MessageHandler(filters.Regex(f"^{BTN_CONTRIBUTE}$"), handle_contribute),
             MessageHandler(filters.Regex(f"^{BTN_HISTORY}$"), handle_history),
             MessageHandler(filters.Regex(f"^{BTN_SHEET}$"), handle_sheet),
             MessageHandler(filters.Regex(f"^{BTN_CLEAR}$"), handle_clear),
+            MessageHandler(filters.Regex(f"^{BTN_CLEAR_HISTORY}$"), handle_clear_history),
         ],
         allow_reentry=True,
     )
 
     app.add_handler(conv)
     app.add_handler(CallbackQueryHandler(handle_confirm, pattern=r"^confirm:"))
+    app.add_handler(CallbackQueryHandler(handle_confirm_clear_history, pattern=r"^clrhist:"))
 
     logger.info("Bot đang chạy...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

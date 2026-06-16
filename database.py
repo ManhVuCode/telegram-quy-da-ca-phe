@@ -52,3 +52,14 @@ def get_user_history(user_id: int):
     rows = c.fetchall()
     conn.close()
     return rows, sum(r[1] for r in rows)
+
+
+def clear_user_history(user_id: int):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    month_str = datetime.now().strftime("%m/%Y")
+    c.execute("DELETE FROM transactions WHERE user_id=? AND month_str=?", (user_id, month_str))
+    deleted = c.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
