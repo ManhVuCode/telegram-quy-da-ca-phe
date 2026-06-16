@@ -68,10 +68,16 @@ def user_fullname(user) -> str:
     return f"{user.first_name} {user.last_name or ''}".strip()
 
 
+def _track(context: ContextTypes.DEFAULT_TYPE, *msg_ids: int):
+    context.user_data.setdefault("msg_ids", []).extend(msg_ids)
+
+
 async def send(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
-    return await context.bot.send_message(
+    msg = await context.bot.send_message(
         chat_id=update.effective_chat.id, text=text, **kwargs
     )
+    _track(context, msg.message_id)
+    return msg
 
 # ── Action handlers ───────────────────────────────────────────────────────────
 
@@ -121,7 +127,7 @@ async def do_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("✅ Tôi đã chuyển khoản thành công", callback_data=f"confirm:{amount}")
     ]])
 
-    await context.bot.send_photo(
+    msg = await context.bot.send_photo(
         chat_id=update.effective_chat.id,
         photo=vietqr_url(amount),
         caption=(
@@ -136,6 +142,7 @@ async def do_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML",
         reply_markup=keyboard,
     )
+    _track(context, msg.message_id)
 
 
 async def do_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -169,16 +176,22 @@ async def do_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def do_clear_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await update.message.delete()
-    except Exception:
-        pass
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
+    chat_id = update.effective_chat.id
+    msg_ids = context.user_data.pop("msg_ids", [])
+
+    for mid in msg_ids:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=mid)
+        except Exception:
+            pass
+
+    msg = await context.bot.send_message(
+        chat_id=chat_id,
         text="✅ Đã xóa nội dung chat!\n<i>(Lịch sử chuyển khoản vẫn được lưu)</i>",
         parse_mode="HTML",
         reply_markup=MAIN_MENU,
     )
+    _track(context, msg.message_id)
 
 
 async def do_clear_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -202,6 +215,9 @@ async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Single dispatcher for all text messages — menu buttons always win."""
+    # Track every user message so Clear can delete it
+    _track(context, update.message.message_id)
+
     text = (update.message.text or "").strip()
 
     # Menu buttons always handled immediately, regardless of current state
